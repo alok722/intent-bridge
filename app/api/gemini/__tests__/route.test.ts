@@ -1,7 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { clearRateLimitStore } from "@/lib/rate-limit";
 import { POST } from "../route";
 
 const mockGenerateContent = vi.fn();
+const mockLogAudit = vi.fn().mockResolvedValue(undefined);
+
+vi.mock("@/lib/firestore-inference-audit", () => ({
+  logInferenceAudit: (...args: unknown[]) => mockLogAudit(...args),
+}));
 
 vi.mock("@google/generative-ai", () => {
   return {
@@ -23,8 +29,11 @@ function createRequest(body: unknown): Request {
 
 describe("POST /api/gemini", () => {
   beforeEach(() => {
+    clearRateLimitStore();
     vi.stubEnv("GEMINI_API_KEY", "test-api-key");
     vi.stubEnv("GEMINI_MODEL", "gemini-2.5-flash");
+    vi.stubEnv("ENABLE_FIRESTORE_LOG", "");
+    mockLogAudit.mockClear();
   });
 
   it("returns 400 for invalid request body", async () => {
@@ -159,5 +168,35 @@ describe("POST /api/gemini", () => {
     const res = await POST(req);
     const data = await res.json();
     expect(JSON.stringify(data)).not.toContain("test-api-key");
+  });
+
+  it("emits inference audit metadata (no user text)", async () => {
+    mockGenerateContent.mockResolvedValue({
+      response: {
+        text: () =>
+          JSON.stringify({
+            triageLevel: "DELAYED",
+            chiefComplaint: "x",
+            vitalsAssessment: { suspected: [] },
+            icd10Codes: [],
+            immediateActions: [],
+            nearestFacilityType: "er",
+            confidenceScore: 0.5,
+            reasoning: "y",
+          }),
+      },
+    });
+
+    const req = createRequest({
+      scenario: "medical",
+      textInput: "sensitive patient narrative",
+    });
+    await POST(req);
+
+    expect(mockLogAudit).toHaveBeenCalled();
+    const payload = mockLogAudit.mock.calls[0][0];
+    expect(payload.scenario).toBe("medical");
+    expect(payload.modalities).toEqual({ text: true, file: false, audio: false });
+    expect(JSON.stringify(mockLogAudit.mock.calls)).not.toContain("sensitive");
   });
 });

@@ -6,6 +6,11 @@
 #   Display name "prompt-war" → PROJECT_ID: sanguine-tome-491605-m7
 #   Artifact Registry: us-central1-docker.pkg.dev/.../intent-bridge
 #
+# Repository Variables (optional):
+#   USE_GCP_SECRET_MANAGER = true  → mount GEMINI_API_KEY from Secret Manager (see README)
+#   GCP_GEMINI_SECRET_NAME        → secret id (default: gemini-api-key)
+#   ENABLE_FIRESTORE_LOG = true   → set ENABLE_FIRESTORE_LOG on the Cloud Run service
+#
 name: Deploy to Cloud Run
 
 on:
@@ -65,12 +70,30 @@ jobs:
             --project "${{ env.GCP_PROJECT_ID }}"
             --platform managed
             --allow-unauthenticated)
-          if [ -n "${GEMINI_API_KEY:-}" ]; then
+
+          EXTRA_ENV=""
+          if [ "${{ vars.ENABLE_FIRESTORE_LOG }}" = "true" ]; then
+            EXTRA_ENV=",ENABLE_FIRESTORE_LOG=true,FIREBASE_PROJECT_ID=${{ env.GCP_PROJECT_ID }}"
+          fi
+
+          MODEL_ENV="GEMINI_MODEL=gemini-2.5-flash${EXTRA_ENV}"
+          USE_SM="${{ vars.USE_GCP_SECRET_MANAGER }}"
+          SECRET_NAME="${{ vars.GCP_GEMINI_SECRET_NAME }}"
+          if [ -z "${SECRET_NAME}" ]; then SECRET_NAME="gemini-api-key"; fi
+
+          if [ "$USE_SM" = "true" ]; then
+            echo "Deploying with Secret Manager: ${SECRET_NAME}:latest"
             gcloud "${COMMON[@]}" \
-              --set-env-vars="GEMINI_API_KEY=${GEMINI_API_KEY},GEMINI_MODEL=gemini-2.5-flash"
+              --set-secrets="GEMINI_API_KEY=${SECRET_NAME}:latest" \
+              --set-env-vars="${MODEL_ENV}"
+          elif [ -n "${GEMINI_API_KEY:-}" ]; then
+            echo "Deploying with GEMINI_API_KEY from GitHub Actions secret"
+            gcloud "${COMMON[@]}" \
+              --set-env-vars="GEMINI_API_KEY=${GEMINI_API_KEY},${MODEL_ENV}"
           else
+            echo "Deploying without GEMINI_API_KEY (set USE_GCP_SECRET_MANAGER or GEMINI_API_KEY secret)"
             gcloud "${COMMON[@]}" \
-              --set-env-vars="GEMINI_MODEL=gemini-2.5-flash"
+              --set-env-vars="${MODEL_ENV}"
           fi
 
       - name: Show service URL

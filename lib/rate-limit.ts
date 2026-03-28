@@ -3,6 +3,11 @@ const MAX_REQUESTS = 10;
 
 const requestLog = new Map<string, number[]>();
 
+/** Clears sliding-window state (e.g. between Vitest cases). */
+export function clearRateLimitStore(): void {
+  requestLog.clear();
+}
+
 export function isRateLimited(ip: string): boolean {
   const now = Date.now();
   const timestamps = requestLog.get(ip) ?? [];

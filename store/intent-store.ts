@@ -133,21 +133,16 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
 
     set({ currentStage: "INGEST", error: null, outputData: null });
 
-    stageTimers.push(
-      setTimeout(() => {
-        if (!signal.aborted) set({ currentStage: "PARSE" });
-      }, 600),
-    );
-    stageTimers.push(
-      setTimeout(() => {
-        if (!signal.aborted) set({ currentStage: "STRUCTURE" });
-      }, 1200),
-    );
-    stageTimers.push(
-      setTimeout(() => {
-        if (!signal.aborted) set({ currentStage: "VERIFY" });
-      }, 2000),
-    );
+    // Short stagger for UX; cleared when the request finishes so fast responses jump straight to ACT.
+    const stageMs = [45, 95, 145] as const;
+    const stageLabels: PipelineStage[] = ["PARSE", "STRUCTURE", "VERIFY"];
+    stageMs.forEach((ms, i) => {
+      stageTimers.push(
+        setTimeout(() => {
+          if (!signal.aborted) set({ currentStage: stageLabels[i] });
+        }, ms),
+      );
+    });
 
     try {
       const payload = {
@@ -171,6 +166,8 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
         signal,
       });
 
+      clearStageTimers();
+
       const data = await res.json();
 
       if (!data.success) {
@@ -181,7 +178,6 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
         );
       }
 
-      clearStageTimers();
       set({ outputData: data.data, currentStage: "ACT" });
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") return;

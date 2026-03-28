@@ -3,9 +3,15 @@ import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import { RequestSchema, responseSchemaMap, type ScenarioKey } from "@/lib/schemas";
 import { getSystemPrompt } from "@/lib/scenarios";
 import { isRateLimited, getClientIp } from "@/lib/rate-limit";
+import {
+  logInferenceAudit,
+  type InferenceAuditPayload,
+} from "@/lib/firestore-inference-audit";
 
 const PRIMARY_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.0-flash";
+
+const EMPTY_MODALITIES = { text: false, file: false, audio: false };
 
 function shouldTryFallback(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
@@ -33,21 +39,56 @@ function sanitizeError(error: unknown): string {
   return "AI generation failed";
 }
 
+async function auditAndReturn(
+  t0: number,
+  res: NextResponse,
+  partial: Omit<InferenceAuditPayload, "httpStatus" | "latencyMs">,
+) {
+  await logInferenceAudit({
+    ...partial,
+    httpStatus: res.status,
+    latencyMs: Date.now() - t0,
+  });
+  return res;
+}
+
 export async function POST(req: Request) {
+  const t0 = Date.now();
+  let scenario = "unknown";
+  let modalities = EMPTY_MODALITIES;
+
   try {
     const clientIp = getClientIp(req);
     if (isRateLimited(clientIp)) {
-      return NextResponse.json(
-        { success: false, error: "Rate limit exceeded. Try again in a minute." },
-        { status: 429 },
+      return await auditAndReturn(
+        t0,
+        NextResponse.json(
+          { success: false, error: "Rate limit exceeded. Try again in a minute." },
+          { status: 429 },
+        ),
+        {
+          scenario,
+          ok: false,
+          modalities,
+          errorKind: "rate_limit",
+        },
       );
     }
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return NextResponse.json(
-        { success: false, error: "Gemini API key is not configured on the server." },
-        { status: 503 },
+      return await auditAndReturn(
+        t0,
+        NextResponse.json(
+          { success: false, error: "Gemini API key is not configured on the server." },
+          { status: 503 },
+        ),
+        {
+          scenario,
+          ok: false,
+          modalities,
+          errorKind: "no_api_key",
+        },
       );
     }
 
@@ -55,9 +96,18 @@ export async function POST(req: Request) {
     try {
       body = await req.json();
     } catch {
-      return NextResponse.json(
-        { success: false, error: "Invalid JSON body." },
-        { status: 400 },
+      return await auditAndReturn(
+        t0,
+        NextResponse.json(
+          { success: false, error: "Invalid JSON body." },
+          { status: 400 },
+        ),
+        {
+          scenario,
+          ok: false,
+          modalities,
+          errorKind: "invalid_json",
+        },
       );
     }
 
@@ -66,27 +116,66 @@ export async function POST(req: Request) {
       const issues = parsed.error.issues;
       const hasMime = issues.some((i) => i.message.includes("file type") || i.message.includes("audio type"));
       const hasSize = issues.some((i) => i.message.includes("10MB"));
+      const rawScenario = (body as { scenario?: string })?.scenario;
+      if (typeof rawScenario === "string") scenario = rawScenario;
 
       if (hasSize) {
-        return NextResponse.json(
-          { success: false, error: "Payload exceeds maximum allowed size (10MB)." },
-          { status: 413 },
+        return await auditAndReturn(
+          t0,
+          NextResponse.json(
+            { success: false, error: "Payload exceeds maximum allowed size (10MB)." },
+            { status: 413 },
+          ),
+          {
+            scenario,
+            ok: false,
+            modalities,
+            errorKind: "payload_size",
+          },
         );
       }
       if (hasMime) {
-        return NextResponse.json(
-          { success: false, error: "Unsupported file type. Allowed: JPEG, PNG, WebP, GIF, PDF, WebM, MP4, OGG, MPEG." },
-          { status: 400 },
+        return await auditAndReturn(
+          t0,
+          NextResponse.json(
+            {
+              success: false,
+              error:
+                "Unsupported file type. Allowed: JPEG, PNG, WebP, GIF, PDF, WebM, MP4, OGG, MPEG.",
+            },
+            { status: 400 },
+          ),
+          {
+            scenario,
+            ok: false,
+            modalities,
+            errorKind: "mime_type",
+          },
         );
       }
 
-      return NextResponse.json(
-        { success: false, error: parsed.error.flatten() },
-        { status: 400 },
+      return await auditAndReturn(
+        t0,
+        NextResponse.json(
+          { success: false, error: parsed.error.flatten() },
+          { status: 400 },
+        ),
+        {
+          scenario,
+          ok: false,
+          modalities,
+          errorKind: "validation",
+        },
       );
     }
 
-    const { scenario, textInput, fileData, audioData } = parsed.data;
+    const { scenario: sc, textInput, fileData, audioData } = parsed.data;
+    scenario = sc;
+    modalities = {
+      text: Boolean(textInput),
+      file: Boolean(fileData),
+      audio: Boolean(audioData),
+    };
 
     const contentParts: Part[] = [];
     if (textInput) contentParts.push({ text: textInput });
@@ -102,11 +191,12 @@ export async function POST(req: Request) {
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const systemPrompt = getSystemPrompt(scenario);
+    const systemPrompt = getSystemPrompt(scenario as ScenarioKey);
     const models = [PRIMARY_MODEL, FALLBACK_MODEL];
 
     let responseText: string | undefined;
     let lastError: unknown;
+    let resolvedModel: string | undefined;
 
     for (const modelName of models) {
       try {
@@ -119,6 +209,7 @@ export async function POST(req: Request) {
           contents: [{ role: "user", parts: contentParts }],
         });
         responseText = result.response.text();
+        resolvedModel = modelName;
         break;
       } catch (err: unknown) {
         lastError = err;
@@ -141,9 +232,19 @@ export async function POST(req: Request) {
     try {
       structuredOutput = JSON.parse(jsonMatch[1] ?? responseText);
     } catch {
-      return NextResponse.json(
-        { success: false, error: "Model failed to return valid JSON structure." },
-        { status: 500 },
+      return await auditAndReturn(
+        t0,
+        NextResponse.json(
+          { success: false, error: "Model failed to return valid JSON structure." },
+          { status: 500 },
+        ),
+        {
+          scenario,
+          ok: false,
+          modalities,
+          model: resolvedModel,
+          errorKind: "json_parse",
+        },
       );
     }
 
@@ -155,12 +256,30 @@ export async function POST(req: Request) {
       }
     }
 
-    return NextResponse.json({ success: true, data: structuredOutput });
+    return await auditAndReturn(
+      t0,
+      NextResponse.json({ success: true, data: structuredOutput }),
+      {
+        scenario,
+        ok: true,
+        modalities,
+        model: resolvedModel,
+      },
+    );
   } catch (error: unknown) {
     console.error("Gemini API Error:", error);
-    return NextResponse.json(
-      { success: false, error: sanitizeError(error) },
-      { status: 500 },
+    return await auditAndReturn(
+      t0,
+      NextResponse.json(
+        { success: false, error: sanitizeError(error) },
+        { status: 500 },
+      ),
+      {
+        scenario,
+        ok: false,
+        modalities,
+        errorKind: "gemini",
+      },
     );
   }
 }

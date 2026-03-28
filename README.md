@@ -251,7 +251,15 @@ For production, avoid plaintext keys in deploy commands or long‑lived CI secre
      --set-env-vars="GEMINI_MODEL=gemini-2.5-flash"
    ```
 
-**GitHub Actions:** Grant the deploy service account `roles/secretmanager.secretAccessor` on `gemini-api-key`, then change the deploy step to use `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest` instead of `--set-env-vars=GEMINI_API_KEY=...`. You can drop the `GEMINI_API_KEY` repository secret once the key exists only in Secret Manager.
+**GitHub Actions:** Grant the deploy service account `roles/secretmanager.secretAccessor` on `gemini-api-key`. The workflow supports Secret Manager via repository variables (see below); you can remove the `GEMINI_API_KEY` repository **secret** once the deploy uses `--set-secrets` only.
+
+#### Firestore inference audit (Google Services)
+
+Optional **Firebase Admin + Firestore** writes one document per `/api/gemini` call to collection **`intent_bridge_audit`**. Payloads include **scenario, input modalities (text/file/audio flags), latency, HTTP status, resolved model, error category** — **not** raw user text or base64.
+
+1. Firebase Console → attach the same GCP project → create a **Firestore** database (Native).
+2. Grant the **Cloud Run service account** used at runtime `roles/datastore.user` (or equivalent Firestore access).
+3. Set **`ENABLE_FIRESTORE_LOG=true`** and **`FIREBASE_PROJECT_ID=<project_id>`** on the service (see `.env.example`). On Cloud Run, Application Default Credentials are used automatically.
 
 ### Continuous deployment (GitHub Actions)
 
@@ -272,7 +280,11 @@ On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/
 3. In GitHub: **Settings → Secrets and variables → Actions → New repository secret**, add:
    - `GCP_WORKLOAD_IDENTITY_PROVIDER` — value printed by the script (`projects/…/locations/global/workloadIdentityPools/…/providers/…`)
    - `GCP_SERVICE_ACCOUNT` — deploy service account email printed by the script
-4. Optional: **`GEMINI_API_KEY`** repository secret so each deploy passes a key via `--set-env-vars` (handy for demos). For production, use Secret Manager instead — see **Production: `GEMINI_API_KEY` in Secret Manager** above.
+4. Optional: **`GEMINI_API_KEY`** repository **secret** so deploy passes a key via `--set-env-vars` (demos / quick setup). For production, prefer Secret Manager (next bullet).
+5. Optional: repository **Variables** (not secrets):
+   - **`USE_GCP_SECRET_MANAGER`** = `true` — deploy uses `--set-secrets GEMINI_API_KEY=<GCP_GEMINI_SECRET_NAME>:latest` (create that secret in GCP; deploy SA needs `secretmanager.secretAccessor`).
+   - **`GCP_GEMINI_SECRET_NAME`** — Secret Manager secret id (default in workflow: `gemini-api-key`).
+   - **`ENABLE_FIRESTORE_LOG`** = `true` — adds `ENABLE_FIRESTORE_LOG=true` and `FIREBASE_PROJECT_ID` to the Cloud Run service (requires Firestore setup above).
 
 **Troubleshooting: `unauthorized_client` / “rejected by the attribute condition”**
 
@@ -300,6 +312,7 @@ Cloud Run sets `PORT` at runtime; the Next.js standalone server reads `process.e
 
 ## Security
 
+- **Google Cloud:** Gemini (Generative Language API), optional **Secret Manager** for keys, optional **Firestore** audit metadata, **Cloud Run** hosting.
 - **Input Validation:** All API requests validated with Zod schemas before processing.
 - **MIME Type Allowlist:** Only JPEG, PNG, WebP, GIF, PDF, WebM, MP4, OGG, MPEG accepted.
 - **Payload Size Limit:** Base64 payloads capped at 10MB per field.
