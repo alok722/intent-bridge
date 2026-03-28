@@ -17,6 +17,8 @@ POOL_ID="${WIF_POOL_ID:-github}"
 PROVIDER_ID="${WIF_PROVIDER_ID:-github-oidc}"
 DEPLOY_SA_NAME="${DEPLOY_SA_NAME:-github-actions-deploy}"
 GITHUB_REPO="${GITHUB_REPO:?Set GITHUB_REPO to owner/repo e.g. myorg/prompt-war}"
+# GitHub sends assertion.repository in lowercase — mismatch breaks auth with attribute_condition errors
+GITHUB_REPO="$(printf '%s' "$GITHUB_REPO" | tr '[:upper:]' '[:lower:]')"
 
 PROJECT_NUMBER="$(gcloud projects describe "$PROJECT_ID" --format='value(projectNumber)')"
 DEPLOY_SA_EMAIL="${DEPLOY_SA_NAME}@${PROJECT_ID}.iam.gserviceaccount.com"
@@ -35,8 +37,15 @@ gcloud iam workload-identity-pools describe "$POOL_ID" --location=global --proje
     --location=global \
     --display-name="GitHub Actions"
 
-gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
-  --location=global --workload-identity-pool="$POOL_ID" --project="$PROJECT_ID" 2>/dev/null || \
+if gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
+  --location=global --workload-identity-pool="$POOL_ID" --project="$PROJECT_ID" &>/dev/null; then
+  echo "Updating existing OIDC provider attribute-condition for repo: $GITHUB_REPO"
+  gcloud iam workload-identity-pools providers update-oidc "$PROVIDER_ID" \
+    --project="$PROJECT_ID" \
+    --location=global \
+    --workload-identity-pool="$POOL_ID" \
+    --attribute-condition="assertion.repository == '${GITHUB_REPO}'"
+else
   gcloud iam workload-identity-pools providers create-oidc "$PROVIDER_ID" \
     --project="$PROJECT_ID" \
     --location=global \
@@ -45,6 +54,7 @@ gcloud iam workload-identity-pools providers describe "$PROVIDER_ID" \
     --issuer-uri="https://token.actions.githubusercontent.com" \
     --attribute-mapping="google.subject=assertion.sub,attribute.repository=assertion.repository" \
     --attribute-condition="assertion.repository == '${GITHUB_REPO}'"
+fi
 
 # Deploy service account
 gcloud iam service-accounts describe "$DEPLOY_SA_EMAIL" --project="$PROJECT_ID" 2>/dev/null || \

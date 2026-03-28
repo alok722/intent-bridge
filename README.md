@@ -227,14 +227,32 @@ On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/
 2. From the repo root:
 
    ```bash
-   export GITHUB_REPO="YOUR_GITHUB_ORG/YOUR_REPO_NAME"
+   export GITHUB_REPO="alok722/intent-bridge"
    bash scripts/setup-gcp-github-wif.sh
    ```
+
+   Use the exact `owner/repo` from the GitHub URL (lowercase). If the OIDC provider already existed with the wrong repo, re-run the script — it **updates** `attribute-condition` on the existing provider.
 
 3. In GitHub: **Settings → Secrets and variables → Actions → New repository secret**, add:
    - `GCP_WORKLOAD_IDENTITY_PROVIDER` — value printed by the script (`projects/…/locations/global/workloadIdentityPools/…/providers/…`)
    - `GCP_SERVICE_ACCOUNT` — deploy service account email printed by the script
 4. Optional: **`GEMINI_API_KEY`** secret so the deployed service receives a key on each deploy (for production, prefer [Secret Manager](https://cloud.google.com/secret-manager) + `--set-secrets`).
+
+**Troubleshooting: `unauthorized_client` / “rejected by the attribute condition”**
+
+The GitHub OIDC token’s `repository` claim must match the Workload Identity provider’s CEL condition (usually `assertion.repository == 'alok722/intent-bridge'`). Fix by updating the provider (adjust pool/provider IDs if yours differ):
+
+```bash
+export PROJECT_ID=sanguine-tome-491605-m7
+export GITHUB_REPO="alok722/intent-bridge"   # lowercase owner/repo
+gcloud iam workload-identity-pools providers update-oidc github-oidc \
+  --project="$PROJECT_ID" \
+  --location=global \
+  --workload-identity-pool=github \
+  --attribute-condition="assertion.repository == '${GITHUB_REPO}'"
+```
+
+If impersonation still fails afterward, ensure the deploy service account has **`roles/iam.workloadIdentityUser`** for principalSet `…/attribute.repository/${GITHUB_REPO}` — re-run `scripts/setup-gcp-github-wif.sh` with the same `GITHUB_REPO`, or fix bindings in **IAM → Service accounts → your deploy SA → Permissions**.
 
 To use another GCP project, edit `GCP_PROJECT_ID` / `GCP_REGION` in the workflow file (or fork the pattern into repository variables).
 
