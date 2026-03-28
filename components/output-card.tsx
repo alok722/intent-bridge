@@ -109,17 +109,16 @@ export default function OutputCard() {
                   {key.replace(/([A-Z])/g, " $1").trim()}
                 </span>
                 {isArray ? (
-                  <div className="flex flex-wrap gap-2 mt-1">
+                  <ul className="mt-1 flex list-none flex-col gap-2 p-0">
                     {(val as unknown[]).map((item, i) => (
-                      <Badge
-                        variant="outline"
+                      <li
                         key={i}
-                        className="bg-white text-zinc-800 border-zinc-200 max-w-full whitespace-normal text-left"
+                        className="rounded-lg border border-zinc-200 bg-white px-3 py-2.5 text-sm font-medium leading-relaxed text-zinc-800 break-words [overflow-wrap:anywhere]"
                       >
                         {formatArrayListItem(item)}
-                      </Badge>
+                      </li>
                     ))}
-                  </div>
+                  </ul>
                 ) : (
                   <span className="text-sm text-zinc-800 font-medium">
                     {typeof val === "object" ? JSON.stringify(val) : String(val)}
