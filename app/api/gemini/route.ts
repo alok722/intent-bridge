@@ -7,6 +7,8 @@ import {
   logInferenceAudit,
   type InferenceAuditPayload,
 } from "@/lib/firestore-inference-audit";
+import { writeInferenceStructuredLog } from "@/lib/gcp-structured-log";
+import { maybeTranslateForModel } from "@/lib/cloud-translate";
 
 const PRIMARY_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
 const FALLBACK_MODEL = "gemini-2.0-flash";
@@ -44,11 +46,13 @@ async function auditAndReturn(
   res: NextResponse,
   partial: Omit<InferenceAuditPayload, "httpStatus" | "latencyMs">,
 ) {
-  await logInferenceAudit({
+  const payload: InferenceAuditPayload = {
     ...partial,
     httpStatus: res.status,
     latencyMs: Date.now() - t0,
-  });
+  };
+  await logInferenceAudit(payload);
+  writeInferenceStructuredLog(payload);
   return res;
 }
 
@@ -56,6 +60,7 @@ export async function POST(req: Request) {
   const t0 = Date.now();
   let scenario = "unknown";
   let modalities = EMPTY_MODALITIES;
+  let translationApplied = false;
 
   try {
     const clientIp = getClientIp(req);
@@ -70,6 +75,7 @@ export async function POST(req: Request) {
           scenario,
           ok: false,
           modalities,
+          translationApplied,
           errorKind: "rate_limit",
         },
       );
@@ -87,6 +93,7 @@ export async function POST(req: Request) {
           scenario,
           ok: false,
           modalities,
+          translationApplied,
           errorKind: "no_api_key",
         },
       );
@@ -106,6 +113,7 @@ export async function POST(req: Request) {
           scenario,
           ok: false,
           modalities,
+          translationApplied,
           errorKind: "invalid_json",
         },
       );
@@ -130,6 +138,7 @@ export async function POST(req: Request) {
             scenario,
             ok: false,
             modalities,
+            translationApplied,
             errorKind: "payload_size",
           },
         );
@@ -149,6 +158,7 @@ export async function POST(req: Request) {
             scenario,
             ok: false,
             modalities,
+            translationApplied,
             errorKind: "mime_type",
           },
         );
@@ -164,6 +174,7 @@ export async function POST(req: Request) {
           scenario,
           ok: false,
           modalities,
+          translationApplied,
           errorKind: "validation",
         },
       );
@@ -177,8 +188,15 @@ export async function POST(req: Request) {
       audio: Boolean(audioData),
     };
 
+    let textForModel = textInput;
+    if (textInput?.trim()) {
+      const tr = await maybeTranslateForModel(textInput);
+      textForModel = tr.text;
+      translationApplied = tr.applied;
+    }
+
     const contentParts: Part[] = [];
-    if (textInput) contentParts.push({ text: textInput });
+    if (textForModel) contentParts.push({ text: textForModel });
     if (fileData) {
       contentParts.push({
         inlineData: { mimeType: fileData.mimeType, data: fileData.base64 },
@@ -242,6 +260,7 @@ export async function POST(req: Request) {
           scenario,
           ok: false,
           modalities,
+          translationApplied,
           model: resolvedModel,
           errorKind: "json_parse",
         },
@@ -263,6 +282,7 @@ export async function POST(req: Request) {
         scenario,
         ok: true,
         modalities,
+        translationApplied,
         model: resolvedModel,
       },
     );
@@ -278,6 +298,7 @@ export async function POST(req: Request) {
         scenario,
         ok: false,
         modalities,
+        translationApplied,
         errorKind: "gemini",
       },
     );

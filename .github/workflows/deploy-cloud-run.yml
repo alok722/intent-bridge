@@ -10,6 +10,7 @@
 #   USE_GCP_SECRET_MANAGER = true  → mount GEMINI_API_KEY from Secret Manager (see README)
 #   GCP_GEMINI_SECRET_NAME        → secret id (default: gemini-api-key)
 #   ENABLE_FIRESTORE_LOG = true   → set ENABLE_FIRESTORE_LOG on the Cloud Run service
+#   ENABLE_CLOUD_TRANSLATE = true → pre-translate free text via Cloud Translation API (ADC)
 #
 name: Deploy to Cloud Run
 
@@ -73,7 +74,10 @@ jobs:
 
           EXTRA_ENV=""
           if [ "${{ vars.ENABLE_FIRESTORE_LOG }}" = "true" ]; then
-            EXTRA_ENV=",ENABLE_FIRESTORE_LOG=true,FIREBASE_PROJECT_ID=${{ env.GCP_PROJECT_ID }}"
+            EXTRA_ENV="${EXTRA_ENV},ENABLE_FIRESTORE_LOG=true,FIREBASE_PROJECT_ID=${{ env.GCP_PROJECT_ID }}"
+          fi
+          if [ "${{ vars.ENABLE_CLOUD_TRANSLATE }}" = "true" ]; then
+            EXTRA_ENV="${EXTRA_ENV},ENABLE_CLOUD_TRANSLATE=true,GOOGLE_CLOUD_PROJECT=${{ env.GCP_PROJECT_ID }}"
           fi
 
           MODEL_ENV="GEMINI_MODEL=gemini-2.5-flash${EXTRA_ENV}"

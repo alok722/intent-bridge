@@ -261,6 +261,20 @@ Optional **Firebase Admin + Firestore** writes one document per `/api/gemini` ca
 2. Grant the **Cloud Run service account** used at runtime `roles/datastore.user` (or equivalent Firestore access).
 3. Set **`ENABLE_FIRESTORE_LOG=true`** and **`FIREBASE_PROJECT_ID=<project_id>`** on the service (see `.env.example`). On Cloud Run, Application Default Credentials are used automatically.
 
+#### Cloud Translation API (optional)
+
+When **`ENABLE_CLOUD_TRANSLATE=true`**, free-text is translated to **English** with [@google-cloud/translate](https://www.npmjs.com/package/@google-cloud/translate) (v2 client) **before** the Gemini call. Multimodal attachments are unchanged.
+
+1. Enable **Cloud Translation API** on the GCP project.
+2. Grant the **Cloud Run runtime** service account **`roles/cloudtranslate.user`**.
+3. Set **`GOOGLE_CLOUD_PROJECT`** (or `GCP_PROJECT_ID` / `FIREBASE_PROJECT_ID`) and **`ENABLE_CLOUD_TRANSLATE=true`**. GitHub variable **`ENABLE_CLOUD_TRANSLATE`** = `true` adds these on deploy.
+
+If translation fails, the original text is used (fail-open).
+
+#### Cloud Logging (structured JSON)
+
+On **Cloud Run**, `K_SERVICE` is set automatically; each inference writes one **JSON** line to stdout with `severity`, `message`, and an `inference` object (same dimensions as the Firestore audit, including **`translationApplied`**). Locally, set **`ENABLE_STRUCTURED_LOG=true`** to emit the same lines.
+
 ### Continuous deployment (GitHub Actions)
 
 On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/workflows/deploy-cloud-run.yml) builds the `Dockerfile`, pushes to **`us-central1-docker.pkg.dev/sanguine-tome-491605-m7/intent-bridge/intent-bridge`**, and deploys the Cloud Run service **`intent-bridge`**.
@@ -285,6 +299,7 @@ On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/
    - **`USE_GCP_SECRET_MANAGER`** = `true` — deploy uses `--set-secrets GEMINI_API_KEY=<GCP_GEMINI_SECRET_NAME>:latest` (create that secret in GCP; deploy SA needs `secretmanager.secretAccessor`).
    - **`GCP_GEMINI_SECRET_NAME`** — Secret Manager secret id (default in workflow: `gemini-api-key`).
    - **`ENABLE_FIRESTORE_LOG`** = `true` — adds `ENABLE_FIRESTORE_LOG=true` and `FIREBASE_PROJECT_ID` to the Cloud Run service (requires Firestore setup above).
+   - **`ENABLE_CLOUD_TRANSLATE`** = `true` — adds `ENABLE_CLOUD_TRANSLATE=true` and `GOOGLE_CLOUD_PROJECT` (requires Translation API + IAM above).
 
 **Troubleshooting: `unauthorized_client` / “rejected by the attribute condition”**
 
@@ -312,7 +327,7 @@ Cloud Run sets `PORT` at runtime; the Next.js standalone server reads `process.e
 
 ## Security
 
-- **Google Cloud:** Gemini (Generative Language API), optional **Secret Manager** for keys, optional **Firestore** audit metadata, **Cloud Run** hosting.
+- **Google Cloud:** Gemini (Generative Language API), optional **Secret Manager**, **Firestore** audit metadata, **Cloud Translation** (optional text normalize), **Cloud Logging** via structured stdout on Cloud Run, **Cloud Run** hosting.
 - **Input Validation:** All API requests validated with Zod schemas before processing.
 - **MIME Type Allowlist:** Only JPEG, PNG, WebP, GIF, PDF, WebM, MP4, OGG, MPEG accepted.
 - **Payload Size Limit:** Base64 payloads capped at 10MB per field.

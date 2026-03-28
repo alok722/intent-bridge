@@ -13,6 +13,8 @@ export interface InferenceAuditPayload {
   modalities: { text: boolean; file: boolean; audio: boolean };
   model?: string;
   errorKind?: string;
+  /** True when text was pre-processed via Cloud Translation API. */
+  translationApplied?: boolean;
 }
 
 const COLLECTION = "intent_bridge_audit";
