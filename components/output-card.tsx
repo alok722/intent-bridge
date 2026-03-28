@@ -9,6 +9,19 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { ShieldAlert, CheckCircle, Zap } from "lucide-react";
 
+function formatArrayListItem(item: unknown): string {
+  if (item === null || item === undefined) return "";
+  if (typeof item !== "object") return String(item);
+  if (Array.isArray(item)) return JSON.stringify(item);
+  return Object.entries(item as Record<string, unknown>)
+    .map(([k, v]) => {
+      const inner =
+        v !== null && typeof v === "object" ? JSON.stringify(v) : String(v ?? "");
+      return `${k}: ${inner}`;
+    })
+    .join(" · ");
+}
+
 export default function OutputCard() {
   const { outputData, currentStage, reset } = useIntentStore();
   const [dispatched, setDispatched] = useState(false);
@@ -19,14 +32,14 @@ export default function OutputCard() {
     const v = String(val).toUpperCase();
     if (v.includes("CRITICAL") || v.includes("IMMEDIATE") || Number(v) > 7) {
       return {
-        color: "bg-red-500 hover:bg-red-600",
+        color: "bg-red-600 hover:bg-red-700 text-white border-transparent",
         icon: ShieldAlert,
         label: "CRITICAL",
       };
     }
     if (v.includes("HIGH") || v.includes("URGENT") || Number(v) > 4) {
       return {
-        color: "bg-orange-500 hover:bg-orange-600",
+        color: "bg-orange-600 hover:bg-orange-700 text-white border-transparent",
         icon: ShieldAlert,
         label: "HIGH RISK",
       };
@@ -51,8 +64,8 @@ export default function OutputCard() {
   const conf = Math.round(((out.confidenceScore as number) || 0) * 100);
 
   return (
-    <Card className="bg-zinc-950 border-red-500/30 overflow-hidden shadow-lg animate-in fade-in slide-in-from-bottom-6">
-      <CardHeader className="border-b border-zinc-900 bg-red-950/10 flex flex-row items-center justify-between py-4">
+    <Card className="bg-white border-red-200/70 overflow-hidden shadow-lg animate-in fade-in slide-in-from-bottom-6">
+      <CardHeader className="border-b border-zinc-200 bg-red-50/70 flex flex-row items-center justify-between py-4">
         <div className="flex items-center gap-3">
           <Icon
             className={cn(
@@ -60,7 +73,7 @@ export default function OutputCard() {
               meta.color.replace("bg-", "text-").split(" ")[0],
             )}
           />
-          <CardTitle className="text-xl tracking-tight text-white font-bold">
+          <CardTitle className="text-xl tracking-tight text-zinc-900 font-bold">
             Verified Intelligence
           </CardTitle>
         </div>
@@ -80,11 +93,11 @@ export default function OutputCard() {
               className="h-2 flex-1 [&>div]:bg-red-500"
               aria-label={`Confidence: ${conf}%`}
             />
-            <span className="text-sm font-bold text-zinc-300">{conf}%</span>
+            <span className="text-sm font-bold text-zinc-700">{conf}%</span>
           </div>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-lg bg-zinc-900/50 border border-zinc-800">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 p-4 rounded-lg bg-zinc-50 border border-zinc-200">
           {Object.entries(outputData).map(([key, val]) => {
             if (key === "confidenceScore" || key.toLowerCase().includes("score"))
               return null;
@@ -97,18 +110,18 @@ export default function OutputCard() {
                 </span>
                 {isArray ? (
                   <div className="flex flex-wrap gap-2 mt-1">
-                    {(val as string[]).map((tag, i) => (
+                    {(val as unknown[]).map((item, i) => (
                       <Badge
                         variant="outline"
                         key={i}
-                        className="bg-zinc-950 text-zinc-300 border-zinc-700"
+                        className="bg-white text-zinc-800 border-zinc-200 max-w-full whitespace-normal text-left"
                       >
-                        {tag}
+                        {formatArrayListItem(item)}
                       </Badge>
                     ))}
                   </div>
                 ) : (
-                  <span className="text-sm text-zinc-200 font-medium">
+                  <span className="text-sm text-zinc-800 font-medium">
                     {typeof val === "object" ? JSON.stringify(val) : String(val)}
                   </span>
                 )}
@@ -120,10 +133,10 @@ export default function OutputCard() {
         {dispatched ? (
           <div
             role="status"
-            className="rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-4 text-center"
+            className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-4 text-center"
           >
-            <CheckCircle className="w-5 h-5 text-green-500 mx-auto mb-2" />
-            <p className="text-sm font-medium text-green-400">
+            <CheckCircle className="w-5 h-5 text-emerald-600 mx-auto mb-2" />
+            <p className="text-sm font-medium text-emerald-800">
               Execution signal dispatched to field unit.
             </p>
           </div>
@@ -131,7 +144,7 @@ export default function OutputCard() {
           <div className="flex items-center gap-4 pt-4">
             <Button
               aria-label="Dispatch execution signal to field unit"
-              className="w-full py-6 text-lg font-bold bg-white text-black hover:bg-zinc-200"
+              className="w-full py-6 text-lg font-bold bg-zinc-900 text-white hover:bg-zinc-800"
               onClick={() => setDispatched(true)}
             >
               <Zap className="mr-2 w-5 h-5" /> Dispatch / Execute
@@ -139,7 +152,7 @@ export default function OutputCard() {
             <Button
               aria-label="Dismiss output and reset"
               variant="outline"
-              className="py-6 border-zinc-700 text-white hover:bg-zinc-800"
+              className="py-6 border-zinc-300 text-zinc-800 hover:bg-zinc-100"
               onClick={reset}
             >
               Dismiss

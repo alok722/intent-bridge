@@ -22,6 +22,11 @@ interface FormState {
   audioData?: { mimeType: string; base64: string; audioUrl: string };
 }
 
+function revokeFormAssets(form: FormState) {
+  if (form.fileData?.previewUrl) URL.revokeObjectURL(form.fileData.previewUrl);
+  if (form.audioData?.audioUrl) URL.revokeObjectURL(form.audioData.audioUrl);
+}
+
 interface IntentStore {
   form: FormState;
   currentStage: PipelineStage;
@@ -57,13 +62,20 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
   outputData: null,
   error: null,
 
-  setScenario: (scenario) =>
-    set((state) => ({
-      form: { ...state.form, scenario },
-      outputData: null,
-      error: null,
-      currentStage: "IDLE",
-    })),
+  setScenario: (scenario) => {
+    clearStageTimers();
+    abortInflight();
+    set((state) => {
+      const form: FormState = { ...state.form, scenario };
+      delete form.textInput;
+      return {
+        form,
+        outputData: null,
+        error: null,
+        currentStage: "IDLE",
+      };
+    });
+  },
 
   setTextInput: (text) =>
     set((state) => ({ form: { ...state.form, textInput: text } })),
@@ -183,8 +195,10 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
   reset: () => {
     clearStageTimers();
     abortInflight();
+    const { form } = get();
+    revokeFormAssets(form);
     set({
-      form: { scenario: get().form.scenario },
+      form: { scenario: form.scenario },
       currentStage: "IDLE",
       outputData: null,
       error: null,

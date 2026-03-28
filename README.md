@@ -217,6 +217,42 @@ gcloud run deploy intent-bridge \
   --set-env-vars GEMINI_API_KEY=your_key,GEMINI_MODEL=gemini-2.5-flash
 ```
 
+#### Production: `GEMINI_API_KEY` in Secret Manager
+
+For production, avoid plaintext keys in deploy commands or long‑lived CI secrets. Store the key in [Secret Manager](https://cloud.google.com/secret-manager) and mount it into Cloud Run as an environment variable (no app code changes — the API route still reads `process.env.GEMINI_API_KEY`).
+
+1. **Create the secret** (once per project):
+
+   ```bash
+   export PROJECT_ID=sanguine-tome-491605-m7
+   printf '%s' "YOUR_AI_STUDIO_KEY" | gcloud secrets create gemini-api-key \
+     --data-file=- --project="$PROJECT_ID"
+   ```
+
+2. **Allow the Cloud Run service account to read it** (use the runtime SA shown in Cloud Run → service details, or the default compute SA if you use that):
+
+   ```bash
+   gcloud secrets add-iam-policy-binding gemini-api-key \
+     --project="$PROJECT_ID" \
+     --member="serviceAccount:YOUR_RUN_SA@${PROJECT_ID}.iam.gserviceaccount.com" \
+     --role="roles/secretmanager.secretAccessor"
+   ```
+
+3. **Deploy with [`--set-secrets`](https://cloud.google.com/sdk/gcloud/reference/run/deploy#--set-secrets)** (maps secret → env var name):
+
+   ```bash
+   gcloud run deploy intent-bridge \
+     --image "$IMAGE" \
+     --project "$PROJECT_ID" \
+     --region "$REGION" \
+     --platform managed \
+     --allow-unauthenticated \
+     --set-secrets="GEMINI_API_KEY=gemini-api-key:latest" \
+     --set-env-vars="GEMINI_MODEL=gemini-2.5-flash"
+   ```
+
+**GitHub Actions:** Grant the deploy service account `roles/secretmanager.secretAccessor` on `gemini-api-key`, then change the deploy step to use `--set-secrets=GEMINI_API_KEY=gemini-api-key:latest` instead of `--set-env-vars=GEMINI_API_KEY=...`. You can drop the `GEMINI_API_KEY` repository secret once the key exists only in Secret Manager.
+
 ### Continuous deployment (GitHub Actions)
 
 On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/workflows/deploy-cloud-run.yml) builds the `Dockerfile`, pushes to **`us-central1-docker.pkg.dev/sanguine-tome-491605-m7/intent-bridge/intent-bridge`**, and deploys the Cloud Run service **`intent-bridge`**.
@@ -236,7 +272,7 @@ On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/
 3. In GitHub: **Settings → Secrets and variables → Actions → New repository secret**, add:
    - `GCP_WORKLOAD_IDENTITY_PROVIDER` — value printed by the script (`projects/…/locations/global/workloadIdentityPools/…/providers/…`)
    - `GCP_SERVICE_ACCOUNT` — deploy service account email printed by the script
-4. Optional: **`GEMINI_API_KEY`** secret so the deployed service receives a key on each deploy (for production, prefer [Secret Manager](https://cloud.google.com/secret-manager) + `--set-secrets`).
+4. Optional: **`GEMINI_API_KEY`** repository secret so each deploy passes a key via `--set-env-vars` (handy for demos). For production, use Secret Manager instead — see **Production: `GEMINI_API_KEY` in Secret Manager** above.
 
 **Troubleshooting: `unauthorized_client` / “rejected by the attribute condition”**
 
@@ -276,7 +312,7 @@ Cloud Run sets `PORT` at runtime; the Next.js standalone server reads `process.e
 
 ## Accessibility
 
-- **Keyboard Navigation:** All interactive elements (dropzone, mic button, sidebar, dispatch) are keyboard-accessible with visible focus rings.
-- **Screen Reader Support:** `aria-live` regions announce pipeline stage changes; `role="alert"` on error messages; `aria-label` on icon-only buttons.
+- **Keyboard Navigation:** File intake uses a native `<button type="button">` for activate-to-browse; mic, sidebar, and dispatch controls are keyboard-operable with visible focus rings.
+- **Screen Reader Support:** `aria-live` regions announce pipeline stage changes; `role="alert"` on error messages; descriptive `aria-label` on the file picker control and icon-only buttons.
 - **Semantic HTML:** Proper heading hierarchy, landmark elements, labeled form controls.
-- **WCAG AA:** Dark theme designed for contrast compliance; focus-visible indicators throughout.
+- **WCAG AA:** Palette tuned for contrast; focus-visible indicators throughout.

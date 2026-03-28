@@ -9,8 +9,8 @@ export default function EmptyState() {
   if (currentStage !== "IDLE" || outputData) return null;
 
   return (
-    <div className="flex flex-col items-center justify-center text-center py-12 px-4 opacity-60">
-      <Radar className="w-10 h-10 text-zinc-600 mb-4" />
+    <div className="flex flex-col items-center justify-center text-center py-12 px-4 opacity-80">
+      <Radar className="w-10 h-10 text-zinc-400 mb-4" />
       <p className="text-sm text-zinc-500 font-medium max-w-sm">
         Submit data above to see structured intelligence here. Results will
         include severity assessment, confidence scoring, and actionable dispatch

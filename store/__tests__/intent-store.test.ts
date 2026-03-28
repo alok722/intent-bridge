@@ -53,6 +53,35 @@ describe("useIntentStore", () => {
       useIntentStore.getState().setScenario("epidemiology");
       expect(useIntentStore.getState().currentStage).toBe("IDLE");
     });
+
+    it("clears free-text only and keeps file/audio when switching scenario", () => {
+      const fileData = {
+        mimeType: "image/png",
+        base64: "abc",
+        previewUrl: "blob:http://localhost/1",
+      };
+      const audioData = {
+        mimeType: "audio/webm",
+        base64: "def",
+        audioUrl: "blob:http://localhost/2",
+      };
+      useIntentStore.getState().setTextInput("field notes");
+      useIntentStore.setState({
+        form: { ...useIntentStore.getState().form, fileData, audioData },
+      });
+      const revoke = vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
+
+      useIntentStore.getState().setScenario("traffic");
+
+      const f = useIntentStore.getState().form;
+      expect(f.scenario).toBe("traffic");
+      expect(f.textInput).toBeUndefined();
+      expect(f.fileData).toEqual(fileData);
+      expect(f.audioData).toEqual(audioData);
+      expect(revoke).not.toHaveBeenCalled();
+
+      revoke.mockRestore();
+    });
   });
 
   describe("setTextInput", () => {
@@ -137,8 +166,8 @@ describe("useIntentStore", () => {
     });
 
     it("sends correct payload shape", async () => {
-      useIntentStore.getState().setTextInput("Patient info");
       useIntentStore.getState().setScenario("disaster");
+      useIntentStore.getState().setTextInput("Patient info");
 
       const fetchMock = vi.fn().mockResolvedValue({
         ok: true,

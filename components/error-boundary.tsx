@@ -30,16 +30,16 @@ export class ErrorBoundary extends Component<Props, State> {
   render() {
     if (this.state.hasError) {
       return (
-        <div className="rounded-xl border border-zinc-800 bg-zinc-950 p-6 text-center space-y-4">
-          <AlertTriangle className="w-8 h-8 text-red-500 mx-auto" />
-          <p className="text-sm text-zinc-400">
+        <div className="rounded-xl border border-zinc-200 bg-white p-6 text-center space-y-4 shadow-sm">
+          <AlertTriangle className="w-8 h-8 text-red-600 mx-auto" />
+          <p className="text-sm text-zinc-600">
             {this.props.fallbackLabel ?? "This section encountered an error."}
           </p>
           <Button
             variant="outline"
             size="sm"
             onClick={() => this.setState({ hasError: false })}
-            className="border-zinc-700 text-zinc-300"
+            className="border-zinc-300 text-zinc-800"
           >
             Retry
           </Button>

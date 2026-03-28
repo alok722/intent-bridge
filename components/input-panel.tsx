@@ -44,16 +44,6 @@ export default function InputPanel() {
     fileInputRef.current?.click();
   }, []);
 
-  const handleDropzoneKeyDown = useCallback(
-    (e: React.KeyboardEvent) => {
-      if (e.key === "Enter" || e.key === " ") {
-        e.preventDefault();
-        openFilePicker();
-      }
-    },
-    [openFilePicker],
-  );
-
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const [recordingTime, setRecordingTime] = useState(0);
@@ -94,10 +84,10 @@ export default function InputPanel() {
   const hasInput = !!(form.textInput || form.fileData || form.audioData);
 
   return (
-    <Card className="bg-zinc-900 border-zinc-800 text-zinc-100 shadow-sm flex flex-col gap-4">
+    <Card className="bg-white border-zinc-200 text-zinc-900 shadow-sm flex flex-col gap-4">
       <CardHeader>
         <CardTitle className="tracking-tight text-xl font-bold flex items-center gap-2">
-          <TextCursorInput className="w-5 h-5 text-red-500" /> Multi-modal
+          <TextCursorInput className="w-5 h-5 text-red-600" /> Multi-modal
           Intake
         </CardTitle>
       </CardHeader>
@@ -106,13 +96,13 @@ export default function InputPanel() {
         <div>
           <label
             htmlFor="intent-text-input"
-            className="text-sm font-medium text-zinc-400 mb-2 block tracking-tight"
+            className="text-sm font-medium text-zinc-600 mb-2 block tracking-tight"
           >
             Free-text Description
           </label>
           <Textarea
             id="intent-text-input"
-            className="bg-zinc-950 border-zinc-800 text-zinc-100 placeholder:text-zinc-600 focus-visible:ring-red-500 min-h-[120px] resize-none"
+            className="bg-zinc-50 border-zinc-200 text-zinc-900 placeholder:text-zinc-400 focus-visible:ring-red-500 min-h-[120px] resize-none"
             placeholder="Paste unstructured notes, news article content, or messy diagnostic text here..."
             value={form.textInput || ""}
             onChange={(e) => setTextInput(e.target.value)}
@@ -120,40 +110,34 @@ export default function InputPanel() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* File Upload */}
+          {/* File Upload: outer div handles drag/drop; empty state uses native button for a11y */}
           <div
-            role="button"
-            tabIndex={0}
-            aria-label="Upload files by dragging or clicking"
             className={cn(
-              "border-2 border-dashed border-zinc-800 rounded-lg p-6 flex flex-col items-center justify-center text-center cursor-pointer hover:bg-zinc-800/50 transition relative focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
-              form.fileData && "border-red-500/50 bg-red-500/5",
+              "border-2 border-dashed border-zinc-200 rounded-lg relative transition",
+              form.fileData && "border-red-400/60 bg-red-50/80",
             )}
             onDragOver={handleDrag}
             onDrop={handleDrop}
-            onClick={openFilePicker}
-            onKeyDown={handleDropzoneKeyDown}
           >
             <input
               ref={fileInputRef}
               type="file"
-              className="hidden"
+              className="sr-only"
               onChange={handleFileChange}
               accept="image/*,application/pdf"
-              aria-hidden="true"
               tabIndex={-1}
             />
             {form.fileData ? (
-              <div className="space-y-2 w-full text-left relative z-10 p-2">
-                <p className="text-zinc-300 font-medium truncate text-sm">
+              <div className="space-y-2 w-full text-left p-6">
+                <p className="text-zinc-800 font-medium truncate text-sm">
                   File Ready ({form.fileData.mimeType})
                 </p>
                 <Button
                   size="sm"
                   variant="destructive"
                   className="w-full mt-2"
-                  onClick={(e) => {
-                    e.stopPropagation();
+                  type="button"
+                  onClick={() => {
                     setFileData(null);
                   }}
                 >
@@ -161,28 +145,38 @@ export default function InputPanel() {
                 </Button>
               </div>
             ) : (
-              <>
-                <UploadCloud className="w-8 h-8 text-zinc-500 mb-2" />
-                <p className="text-sm text-zinc-400 font-medium">
+              <button
+                type="button"
+                onClick={openFilePicker}
+                aria-label="Upload image or PDF. Drag and drop a file here, or press to open file picker."
+                className={cn(
+                  "flex w-full min-h-[148px] flex-col items-center justify-center rounded-lg p-6 text-center",
+                  "cursor-pointer border-0 bg-transparent text-inherit",
+                  "hover:bg-zinc-50 transition-colors",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
+                )}
+              >
+                <UploadCloud className="w-8 h-8 text-zinc-400 mb-2 pointer-events-none" aria-hidden />
+                <span className="text-sm text-zinc-600 font-medium pointer-events-none">
                   Drag & Drop Image/PDF
-                </p>
-                <p className="text-xs text-zinc-600 mt-1">
+                </span>
+                <span className="text-xs text-zinc-500 mt-1 pointer-events-none">
                   or click to browse files
-                </p>
-              </>
+                </span>
+              </button>
             )}
           </div>
 
           {/* Voice Input */}
           <div
             className={cn(
-              "border-2 border-dashed border-zinc-800 rounded-lg p-6 flex flex-col items-center justify-center transition relative",
-              form.audioData && "border-red-500/50 bg-red-500/5",
+              "border-2 border-dashed border-zinc-200 rounded-lg p-6 flex flex-col items-center justify-center transition relative",
+              form.audioData && "border-red-400/60 bg-red-50/80",
             )}
           >
             {form.audioData ? (
               <div className="space-y-2 w-full text-center relative z-10 p-2">
-                <p className="text-zinc-300 font-medium text-sm">
+                <p className="text-zinc-800 font-medium text-sm">
                   Audio Recorded
                 </p>
                 <audio
@@ -207,25 +201,25 @@ export default function InputPanel() {
                     isRecording ? "Stop recording" : "Start voice recording"
                   }
                   className={cn(
-                    "p-4 rounded-full transition-all flex items-center justify-center mx-auto focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-zinc-900",
+                    "p-4 rounded-full transition-all flex items-center justify-center mx-auto focus-visible:ring-2 focus-visible:ring-red-500 focus-visible:ring-offset-2 focus-visible:ring-offset-white",
                     isRecording
-                      ? "bg-red-500 animate-pulse ring-4 ring-red-500/30"
-                      : "bg-zinc-800 hover:bg-zinc-700",
+                      ? "bg-red-600 animate-pulse ring-4 ring-red-500/30"
+                      : "bg-zinc-200 hover:bg-zinc-300",
                   )}
                 >
                   <Mic
                     className={cn(
                       "w-6 h-6",
-                      isRecording ? "text-white" : "text-zinc-400",
+                      isRecording ? "text-white" : "text-zinc-600",
                     )}
                   />
                 </button>
                 {isRecording ? (
-                  <p className="text-red-400 text-sm font-medium animate-pulse">
+                  <p className="text-red-600 text-sm font-medium animate-pulse">
                     Recording... {recordingTime}s
                   </p>
                 ) : (
-                  <p className="text-sm text-zinc-400 font-medium">
+                  <p className="text-sm text-zinc-600 font-medium">
                     Capture Voice Note
                   </p>
                 )}
@@ -238,7 +232,7 @@ export default function InputPanel() {
         {error && (
           <div
             role="alert"
-            className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400"
+            className="rounded-lg bg-red-50 border border-red-200 px-4 py-3 text-sm text-red-700"
           >
             {error}
           </div>
@@ -246,7 +240,7 @@ export default function InputPanel() {
 
         <div className="pt-4">
           <Button
-            className="w-full py-6 text-lg font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-md transition-all active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-800"
+            className="w-full py-6 text-lg font-bold bg-red-600 hover:bg-red-700 text-white rounded-lg shadow-md transition-all active:scale-[0.98] disabled:opacity-50 disabled:bg-zinc-300"
             disabled={!hasInput || currentStage !== "IDLE"}
             onClick={() => submitIntent()}
           >
