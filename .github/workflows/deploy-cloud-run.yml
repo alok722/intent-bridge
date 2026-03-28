@@ -1,0 +1,81 @@
+# Deploy IntentBridge Docker image to Cloud Run on every push to main.
+#
+# Prerequisites (one-time): see README → "Continuous deployment (GitHub Actions)"
+#
+# GCP mapping (from gcloud for alokr417@gmail.com):
+#   Display name "prompt-war" → PROJECT_ID: sanguine-tome-491605-m7
+#   Artifact Registry: us-central1-docker.pkg.dev/.../intent-bridge
+#
+name: Deploy to Cloud Run
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: cloud-run-deploy-main
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  id-token: write
+
+env:
+  # Override via repo Variables if you use a different GCP project
+  GCP_PROJECT_ID: sanguine-tome-491605-m7
+  GCP_REGION: us-central1
+  ARTIFACT_REPO: intent-bridge
+  SERVICE_NAME: intent-bridge
+  IMAGE_NAME: intent-bridge
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev --quiet
+
+      - name: Build and push container image
+        run: |
+          IMAGE="${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/${{ env.ARTIFACT_REPO }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
+          docker build -t "$IMAGE" .
+          docker push "$IMAGE"
+          echo "Pushed $IMAGE"
+          echo "IMAGE=$IMAGE" >> "$GITHUB_ENV"
+
+      - name: Deploy to Cloud Run
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          set -euo pipefail
+          COMMON=(run deploy "${{ env.SERVICE_NAME }}"
+            --image "${IMAGE}"
+            --region "${{ env.GCP_REGION }}"
+            --project "${{ env.GCP_PROJECT_ID }}"
+            --platform managed
+            --allow-unauthenticated)
+          if [ -n "${GEMINI_API_KEY:-}" ]; then
+            gcloud "${COMMON[@]}" \
+              --set-env-vars="GEMINI_API_KEY=${GEMINI_API_KEY},GEMINI_MODEL=gemini-2.5-flash"
+          else
+            gcloud "${COMMON[@]}" \
+              --set-env-vars="GEMINI_MODEL=gemini-2.5-flash"
+          fi
+
+      - name: Show service URL
+        run: |
+          gcloud run services describe "${{ env.SERVICE_NAME }}" \
+            --region "${{ env.GCP_REGION }}" \
+            --project "${{ env.GCP_PROJECT_ID }}" \
+            --format 'value(status.url)'

@@ -1,5 +1,6 @@
 import dynamic from "next/dynamic";
 import ScenarioSidebar from "@/components/scenario-sidebar";
+import ContextAssistantStrip from "@/components/context-assistant-strip";
 import InputPanel from "@/components/input-panel";
 import { ErrorBoundary } from "@/components/error-boundary";
 import EmptyState from "@/components/empty-state";
@@ -30,6 +31,7 @@ export default function DashboardPage() {
         </header>
 
         <div className="flex-1 flex flex-col gap-4 max-w-5xl w-full mx-auto pb-24">
+          <ContextAssistantStrip />
           <ErrorBoundary fallbackLabel="Input panel encountered an error.">
             <InputPanel />
           </ErrorBoundary>

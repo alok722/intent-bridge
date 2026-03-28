@@ -13,6 +13,7 @@
 
 ## Component Map
 - **AppShell**: Responsive sidebar (horizontal scroll on mobile, fixed sidebar on desktop), and a main content area.
+- **ContextAssistantStrip**: Client-only panel that updates when the operating domain changes; surfaces **focus**, **reasoning**, and **expected structured outputs** for the smart assistant (ties UI to `lib/scenario-context.ts`).
 - **ScenarioSidebar**: Navigation links for all 5 domains:
     - `/` — E-Medical Triage (`medical`)
     - `/` — Disaster Coordination (`disaster`)

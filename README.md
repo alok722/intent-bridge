@@ -4,6 +4,28 @@
 
 IntentBridge accepts **any unstructured, messy, real-world input** — free-text notes, photographs, voice recordings, scanned documents — and instantly converts them into **structured, validated, actionable intelligence** for emergency responders and decision-makers.
 
+### Submission bundle (under 1 MB)
+
+Evaluators usually measure the **uploaded archive**, not a full clone that includes `node_modules` or `.next` (those are often **hundreds of MB**). Submit **source only**:
+
+```bash
+npm run pack:submit
+```
+
+This creates `intent-bridge-submit.zip` (typically **~150–200 KB** compressed), excluding dependencies, build output, git metadata, and local secrets. The script fails if the zip reaches **≥ 1 MB**.
+
+`npm install && npm run build` restores a runnable app from that bundle.
+
+### How this solution maps to core criteria
+
+| Criterion | How IntentBridge demonstrates it |
+|-----------|-----------------------------------|
+| **Smart, dynamic assistant** | Operating-domain switcher drives **different system prompts and JSON schemas** per scenario; the dashboard **Context strip** updates live to explain focus, reasoning, and expected outputs. Inference uses **Google Gemini** multi-modally (text, image, audio). |
+| **Logical decisions from user context** | **Scenario-aware** `getSystemPrompt(scenario)` + `getScenarioAssistantContext(domain)` route behavior (triage vs traffic vs epidemiology); server validates requests with **Zod** and applies **rate/size/MIME** policy before calling the model. |
+| **Effective use of Google Services** | **Gemini API** (`@google/generative-ai`) for generation; **Next.js** deployment path documented for **Cloud Run**; **Google Fonts** (Space Grotesk, Inter) via `next/font/google`. |
+| **Practical, real-world usability** | **Multi-modal intake** (paste, file, voice), **5-step pipeline** feedback, **empty/error states**, keyboard-accessible dropzone, **WCAG-oriented** labels and `aria-live` regions, **Dockerfile** for production-shaped delivery. |
+| **Clean, maintainable code** | **Strict TypeScript**, modular components, shared **Zustand** store, **co-located Vitest tests**, centralized **schemas** and **lib/** helpers, **ESLint** clean, **multi-stage Docker** build. |
+
 ---
 
 ## Selected Vertical
@@ -177,20 +199,46 @@ docker run -p 3000:3000 -e GEMINI_API_KEY=your_key intent-bridge
 
 ### GCP Cloud Run
 
-```bash
-# Build and push
-gcloud builds submit --tag gcr.io/prompt-war/intent-bridge
+Console **project name** *prompt-war* maps to **project ID** `sanguine-tome-491605-m7` (account `alokr417@gmail.com`). Docker images for this app use Artifact Registry **`intent-bridge`** in **`us-central1`**.
 
-# Deploy
+Manual deploy (after `gcloud auth login` and `gcloud config set project sanguine-tome-491605-m7`):
+
+```bash
+export PROJECT_ID=sanguine-tome-491605-m7
+export REGION=us-central1
+export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/intent-bridge/intent-bridge:manual-$(date +%s)"
+docker build -t "$IMAGE" . && docker push "$IMAGE"
 gcloud run deploy intent-bridge \
-  --image gcr.io/prompt-war/intent-bridge \
+  --image "$IMAGE" \
+  --project "$PROJECT_ID" \
+  --region "$REGION" \
   --platform managed \
-  --region us-central1 \
   --allow-unauthenticated \
   --set-env-vars GEMINI_API_KEY=your_key,GEMINI_MODEL=gemini-2.5-flash
 ```
 
-Cloud Run sets `PORT` at runtime (commonly `8080`); the Next.js standalone `server.js` listens on `process.env.PORT`, so the revision container port should match (defaults are usually correct). Prefer Secret Manager (`--set-secrets`) for `GEMINI_API_KEY` in real deployments instead of plain env vars.
+### Continuous deployment (GitHub Actions)
+
+On every **push to `main`**, [`.github/workflows/deploy-cloud-run.yml`](.github/workflows/deploy-cloud-run.yml) builds the `Dockerfile`, pushes to **`us-central1-docker.pkg.dev/sanguine-tome-491605-m7/intent-bridge/intent-bridge`**, and deploys the Cloud Run service **`intent-bridge`**.
+
+**One-time GCP + GitHub setup (Workload Identity Federation — no JSON key in GitHub):**
+
+1. Install `gcloud` and log in as `alokr417@gmail.com`.
+2. From the repo root:
+
+   ```bash
+   export GITHUB_REPO="YOUR_GITHUB_ORG/YOUR_REPO_NAME"
+   bash scripts/setup-gcp-github-wif.sh
+   ```
+
+3. In GitHub: **Settings → Secrets and variables → Actions → New repository secret**, add:
+   - `GCP_WORKLOAD_IDENTITY_PROVIDER` — value printed by the script (`projects/…/locations/global/workloadIdentityPools/…/providers/…`)
+   - `GCP_SERVICE_ACCOUNT` — deploy service account email printed by the script
+4. Optional: **`GEMINI_API_KEY`** secret so the deployed service receives a key on each deploy (for production, prefer [Secret Manager](https://cloud.google.com/secret-manager) + `--set-secrets`).
+
+To use another GCP project, edit `GCP_PROJECT_ID` / `GCP_REGION` in the workflow file (or fork the pattern into repository variables).
+
+Cloud Run sets `PORT` at runtime; the Next.js standalone server reads `process.env.PORT`. Prefer Secret Manager for `GEMINI_API_KEY` in production instead of plain env vars.
 
 > JLL policy requires InfoSec approval before deploying to external infrastructure. For prototyping, use localhost.
 
