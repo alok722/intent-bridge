@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { getSystemPrompt } from "../scenarios";
+import type { ScenarioKey } from "../schemas";
 
 describe("getSystemPrompt", () => {
   it("returns medical prompt for 'medical' scenario", () => {
@@ -38,13 +39,13 @@ describe("getSystemPrompt", () => {
   });
 
   it("falls back to medical prompt for unknown scenario", () => {
-    const prompt = getSystemPrompt("unknown_scenario");
+    const prompt = getSystemPrompt("unknown_scenario" as ScenarioKey);
     const medicalPrompt = getSystemPrompt("medical");
     expect(prompt).toBe(medicalPrompt);
   });
 
   it("all prompts instruct JSON-only output", () => {
-    const scenarios = [
+    const scenarios: ScenarioKey[] = [
       "medical",
       "disaster",
       "infrastructure",
@@ -58,7 +59,7 @@ describe("getSystemPrompt", () => {
   });
 
   it("all prompts include confidenceScore in expected output", () => {
-    const scenarios = [
+    const scenarios: ScenarioKey[] = [
       "medical",
       "disaster",
       "infrastructure",

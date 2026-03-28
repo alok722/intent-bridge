@@ -54,7 +54,7 @@ describe("useIntentStore", () => {
       expect(useIntentStore.getState().currentStage).toBe("IDLE");
     });
 
-    it("clears free-text only and keeps file/audio when switching scenario", () => {
+    it("clears all form data and revokes URLs when switching scenario", () => {
       const fileData = {
         mimeType: "image/png",
         base64: "abc",
@@ -76,9 +76,10 @@ describe("useIntentStore", () => {
       const f = useIntentStore.getState().form;
       expect(f.scenario).toBe("traffic");
       expect(f.textInput).toBeUndefined();
-      expect(f.fileData).toEqual(fileData);
-      expect(f.audioData).toEqual(audioData);
-      expect(revoke).not.toHaveBeenCalled();
+      expect(f.fileData).toBeUndefined();
+      expect(f.audioData).toBeUndefined();
+      expect(revoke).toHaveBeenCalledWith("blob:http://localhost/1");
+      expect(revoke).toHaveBeenCalledWith("blob:http://localhost/2");
 
       revoke.mockRestore();
     });

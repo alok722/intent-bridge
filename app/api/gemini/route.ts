@@ -1,60 +1,18 @@
 import { NextResponse } from "next/server";
-import { GoogleGenerativeAI, Part } from "@google/generative-ai";
+import { type Part } from "@google/generative-ai";
 import { RequestSchema, responseSchemaMap, type ScenarioKey } from "@/lib/schemas";
 import { getSystemPrompt } from "@/lib/scenarios";
 import { isRateLimited, getClientIp } from "@/lib/rate-limit";
-import {
-  logInferenceAudit,
-  type InferenceAuditPayload,
-} from "@/lib/firestore-inference-audit";
-import { writeInferenceStructuredLog } from "@/lib/gcp-structured-log";
 import { maybeTranslateForModel } from "@/lib/cloud-translate";
+import { generateGeminiContent, parseMarkedJson } from "@/lib/gemini-service";
+import { auditAndReturnResponse, sanitizeErrorMessage } from "@/lib/api-response-utils";
+import { reportError } from "@/lib/gcp-error-reporting";
 
-const PRIMARY_MODEL = process.env.GEMINI_MODEL ?? "gemini-2.5-flash";
-const FALLBACK_MODEL = "gemini-2.0-flash";
-
-const EMPTY_MODALITIES = { text: false, file: false, audio: false };
-
-function shouldTryFallback(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
-  return (
-    /\b429\b/.test(msg) ||
-    /quota/i.test(msg) ||
-    /\b404\b/.test(msg) ||
-    /NOT_FOUND/i.test(msg) ||
-    /is not (found|supported)/i.test(msg)
-  );
-}
-
-function sanitizeError(error: unknown): string {
-  if (error instanceof Error) {
-    const msg = error.message;
-    const apiKey = process.env.GEMINI_API_KEY ?? "";
-    if (apiKey && msg.includes(apiKey)) {
-      return "AI generation failed due to an authentication error.";
-    }
-    if (/key|token|secret|credential/i.test(msg)) {
-      return "AI generation failed due to a configuration error.";
-    }
-    return msg;
-  }
-  return "AI generation failed";
-}
-
-async function auditAndReturn(
-  t0: number,
-  res: NextResponse,
-  partial: Omit<InferenceAuditPayload, "httpStatus" | "latencyMs">,
-) {
-  const payload: InferenceAuditPayload = {
-    ...partial,
-    httpStatus: res.status,
-    latencyMs: Date.now() - t0,
-  };
-  await logInferenceAudit(payload);
-  writeInferenceStructuredLog(payload);
-  return res;
-}
+const EMPTY_MODALITIES: { text: boolean; file: boolean; audio: boolean } = {
+  text: false,
+  file: false,
+  audio: false,
+};
 
 export async function POST(req: Request) {
   const t0 = Date.now();
@@ -65,7 +23,7 @@ export async function POST(req: Request) {
   try {
     const clientIp = getClientIp(req);
     if (isRateLimited(clientIp)) {
-      return await auditAndReturn(
+      return await auditAndReturnResponse(
         t0,
         NextResponse.json(
           { success: false, error: "Rate limit exceeded. Try again in a minute." },
@@ -83,7 +41,7 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return await auditAndReturn(
+      return await auditAndReturnResponse(
         t0,
         NextResponse.json(
           { success: false, error: "Gemini API key is not configured on the server." },
@@ -103,7 +61,7 @@ export async function POST(req: Request) {
     try {
       body = await req.json();
     } catch {
-      return await auditAndReturn(
+      return await auditAndReturnResponse(
         t0,
         NextResponse.json(
           { success: false, error: "Invalid JSON body." },
@@ -128,7 +86,7 @@ export async function POST(req: Request) {
       if (typeof rawScenario === "string") scenario = rawScenario;
 
       if (hasSize) {
-        return await auditAndReturn(
+        return await auditAndReturnResponse(
           t0,
           NextResponse.json(
             { success: false, error: "Payload exceeds maximum allowed size (10MB)." },
@@ -144,7 +102,7 @@ export async function POST(req: Request) {
         );
       }
       if (hasMime) {
-        return await auditAndReturn(
+        return await auditAndReturnResponse(
           t0,
           NextResponse.json(
             {
@@ -164,7 +122,7 @@ export async function POST(req: Request) {
         );
       }
 
-      return await auditAndReturn(
+      return await auditAndReturnResponse(
         t0,
         NextResponse.json(
           { success: false, error: parsed.error.flatten() },
@@ -208,49 +166,18 @@ export async function POST(req: Request) {
       });
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
     const systemPrompt = getSystemPrompt(scenario as ScenarioKey);
-    const models = [PRIMARY_MODEL, FALLBACK_MODEL];
+    const { responseText, resolvedModel } = await generateGeminiContent(
+      apiKey,
+      systemPrompt,
+      contentParts,
+    );
 
-    let responseText: string | undefined;
-    let lastError: unknown;
-    let resolvedModel: string | undefined;
-
-    for (const modelName of models) {
-      try {
-        const model = genAI.getGenerativeModel({
-          model: modelName,
-          systemInstruction: systemPrompt,
-        });
-
-        const result = await model.generateContent({
-          contents: [{ role: "user", parts: contentParts }],
-        });
-        responseText = result.response.text();
-        resolvedModel = modelName;
-        break;
-      } catch (err: unknown) {
-        lastError = err;
-        if (!shouldTryFallback(err) || modelName === models[models.length - 1]) {
-          throw err;
-        }
-        console.warn(`Model ${modelName} failed, trying fallback.`);
-      }
-    }
-
-    if (responseText === undefined) {
-      throw lastError ?? new Error("No model produced a response");
-    }
-
-    const jsonMatch = responseText.match(/```(?:json)?\n?([\s\S]*?)\n?```/) || [
-      null,
-      responseText,
-    ];
     let structuredOutput: unknown;
     try {
-      structuredOutput = JSON.parse(jsonMatch[1] ?? responseText);
+      structuredOutput = parseMarkedJson(responseText);
     } catch {
-      return await auditAndReturn(
+      return await auditAndReturnResponse(
         t0,
         NextResponse.json(
           { success: false, error: "Model failed to return valid JSON structure." },
@@ -275,7 +202,7 @@ export async function POST(req: Request) {
       }
     }
 
-    return await auditAndReturn(
+    return await auditAndReturnResponse(
       t0,
       NextResponse.json({ success: true, data: structuredOutput }),
       {
@@ -287,11 +214,14 @@ export async function POST(req: Request) {
       },
     );
   } catch (error: unknown) {
-    console.error("Gemini API Error:", error);
-    return await auditAndReturn(
+    reportError(error, {
+      httpRequest: { method: "POST", url: "/api/gemini" },
+      scenario,
+    });
+    return await auditAndReturnResponse(
       t0,
       NextResponse.json(
-        { success: false, error: sanitizeError(error) },
+        { success: false, error: sanitizeErrorMessage(error) },
         { status: 500 },
       ),
       {

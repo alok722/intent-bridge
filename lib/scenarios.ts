@@ -1,6 +1,13 @@
-export function getSystemPrompt(scenario: string): string {
-  const prompts: Record<string, string> = {
-    medical: `You are an emergency medical AI triage system. 
+import type { ScenarioKey } from "@/lib/schemas";
+
+/**
+ * System prompts keyed by scenario domain.
+ *
+ * Each prompt steers Gemini toward the expected structured JSON schema
+ * defined in `lib/schemas.ts`, with domain-specific instructions.
+ */
+const SYSTEM_PROMPTS: Record<ScenarioKey, string> = {
+  medical: `You are an emergency medical AI triage system. 
       Analyze ANY input (text, image, audio) and return ONLY valid JSON:
       {
         "triageLevel": "IMMEDIATE" | "URGENT" | "DELAYED" | "MINIMAL",
@@ -12,7 +19,7 @@ export function getSystemPrompt(scenario: string): string {
         "confidenceScore": number (0.0-1.0),
         "reasoning": "string"
       }`,
-    disaster: `You are a disaster response coordination AI.
+  disaster: `You are a disaster response coordination AI.
       Analyze inputs and return ONLY valid JSON:
       {
         "disasterType": "string",
@@ -24,7 +31,7 @@ export function getSystemPrompt(scenario: string): string {
         "estimatedAffected": number,
         "confidenceScore": number (0.0-1.0)
       }`,
-    infrastructure: `You are a municipal infrastructure damage AI.
+  infrastructure: `You are a municipal infrastructure damage AI.
       Return ONLY valid JSON:
       {
         "damageType": "string",
@@ -36,7 +43,7 @@ export function getSystemPrompt(scenario: string): string {
         "requiredCrews": ["string"],
         "confidenceScore": number (0.0-1.0)
       }`,
-    epidemiology: `You are an epidemiology intelligence system.
+  epidemiology: `You are an epidemiology intelligence system.
       Analyze the input and return ONLY valid JSON:
       {
          "outbreakType": "string",
@@ -46,7 +53,7 @@ export function getSystemPrompt(scenario: string): string {
          "suggestedDraft": "string",
          "confidenceScore": number (0.0-1.0)
       }`,
-    traffic: `You are a traffic rerouting coordinator AI.
+  traffic: `You are a traffic rerouting coordinator AI.
        Analyze the input and return ONLY valid JSON:
        {
          "incidentDescription": "string",
@@ -54,7 +61,14 @@ export function getSystemPrompt(scenario: string): string {
          "suggestedDetours": ["string"],
          "notifiedParties": ["string"],
          "confidenceScore": number (0.0-1.0)
-       }`
-  };
-  return prompts[scenario] ?? prompts['medical'];
+       }`,
+} as const;
+
+/**
+ * Returns the system prompt for a given scenario, defaulting to `medical`.
+ *
+ * @param scenario - The active scenario domain
+ */
+export function getSystemPrompt(scenario: ScenarioKey): string {
+  return SYSTEM_PROMPTS[scenario] ?? SYSTEM_PROMPTS.medical;
 }

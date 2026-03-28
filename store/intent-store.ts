@@ -1,6 +1,7 @@
 import { create } from "zustand";
 import { toBase64 } from "@/lib/utils";
 
+/** Pipeline execution stages displayed in the visualizer. */
 export type PipelineStage =
   | "IDLE"
   | "INGEST"
@@ -8,6 +9,8 @@ export type PipelineStage =
   | "STRUCTURE"
   | "VERIFY"
   | "ACT";
+
+/** Available domain scenarios the user can select. */
 export type ScenarioDomain =
   | "medical"
   | "disaster"
@@ -15,19 +18,36 @@ export type ScenarioDomain =
   | "epidemiology"
   | "traffic";
 
-interface FormState {
-  scenario: ScenarioDomain;
-  textInput?: string;
-  fileData?: { mimeType: string; base64: string; previewUrl: string };
-  audioData?: { mimeType: string; base64: string; audioUrl: string };
+/** Uploaded file metadata stored in the form state. */
+export interface FilePayload {
+  mimeType: string;
+  base64: string;
+  previewUrl: string;
 }
 
-function revokeFormAssets(form: FormState) {
+/** Recorded audio metadata stored in the form state. */
+export interface AudioPayload {
+  mimeType: string;
+  base64: string;
+  audioUrl: string;
+}
+
+/** The user's current form inputs across all modalities. */
+export interface FormState {
+  scenario: ScenarioDomain;
+  textInput?: string;
+  fileData?: FilePayload;
+  audioData?: AudioPayload;
+}
+
+/** Revokes any outstanding Object URLs to avoid memory leaks. */
+function revokeFormAssets(form: FormState): void {
   if (form.fileData?.previewUrl) URL.revokeObjectURL(form.fileData.previewUrl);
   if (form.audioData?.audioUrl) URL.revokeObjectURL(form.audioData.audioUrl);
 }
 
-interface IntentStore {
+/** Public store interface consumed by components. */
+export interface IntentStore {
   form: FormState;
   currentStage: PipelineStage;
   outputData: Record<string, unknown> | null;
@@ -41,20 +61,32 @@ interface IntentStore {
   reset: () => void;
 }
 
+// ── Internal state (outside React tree, zero re-renders) ────────────────
+
 let stageTimers: ReturnType<typeof setTimeout>[] = [];
 let abortController: AbortController | null = null;
 
-function clearStageTimers() {
+function clearStageTimers(): void {
   stageTimers.forEach(clearTimeout);
   stageTimers = [];
 }
 
-function abortInflight() {
+function abortInflight(): void {
   if (abortController) {
     abortController.abort();
     abortController = null;
   }
 }
+
+/** UX stage transition delays (ms) for the pipeline stepper animation. */
+const STAGE_TRANSITION_MS = [45, 95, 145] as const;
+const STAGE_TRANSITION_LABELS: readonly PipelineStage[] = [
+  "PARSE",
+  "STRUCTURE",
+  "VERIFY",
+] as const;
+
+// ── Store ───────────────────────────────────────────────────────────────
 
 export const useIntentStore = create<IntentStore>((set, get) => ({
   form: { scenario: "medical" },
@@ -66,10 +98,9 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
     clearStageTimers();
     abortInflight();
     set((state) => {
-      const form: FormState = { ...state.form, scenario };
-      delete form.textInput;
+      revokeFormAssets(state.form);
       return {
-        form,
+        form: { scenario },
         outputData: null,
         error: null,
         currentStage: "IDLE",
@@ -133,13 +164,11 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
 
     set({ currentStage: "INGEST", error: null, outputData: null });
 
-    // Short stagger for UX; cleared when the request finishes so fast responses jump straight to ACT.
-    const stageMs = [45, 95, 145] as const;
-    const stageLabels: PipelineStage[] = ["PARSE", "STRUCTURE", "VERIFY"];
-    stageMs.forEach((ms, i) => {
+    // Stagger UX stage labels while the network request is in-flight.
+    STAGE_TRANSITION_MS.forEach((ms, i) => {
       stageTimers.push(
         setTimeout(() => {
-          if (!signal.aborted) set({ currentStage: stageLabels[i] });
+          if (!signal.aborted) set({ currentStage: STAGE_TRANSITION_LABELS[i] });
         }, ms),
       );
     });
@@ -168,7 +197,8 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
 
       clearStageTimers();
 
-      const data = await res.json();
+      const data: { success: boolean; data?: Record<string, unknown>; error?: string } =
+        await res.json();
 
       if (!data.success) {
         throw new Error(
@@ -178,7 +208,7 @@ export const useIntentStore = create<IntentStore>((set, get) => ({
         );
       }
 
-      set({ outputData: data.data, currentStage: "ACT" });
+      set({ outputData: data.data ?? null, currentStage: "ACT" });
     } catch (err: unknown) {
       if (err instanceof DOMException && err.name === "AbortError") return;
       const errorMessage =

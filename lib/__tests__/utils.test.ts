@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cn, toBase64 } from "../utils";
+import { cn, toBase64, formatFieldLabel } from "../utils";
 
 describe("cn", () => {
   it("merges multiple class strings", () => {
@@ -49,3 +49,22 @@ describe("toBase64", () => {
     expect(result.length).toBeGreaterThan(0);
   });
 });
+
+describe("formatFieldLabel", () => {
+  it("splits camelCase into spaced words", () => {
+    expect(formatFieldLabel("chiefComplaint")).toBe("chief Complaint");
+  });
+
+  it("splits PascalCase", () => {
+    expect(formatFieldLabel("TriageLevel")).toBe("Triage Level");
+  });
+
+  it("handles all-lowercase strings unchanged", () => {
+    expect(formatFieldLabel("severity")).toBe("severity");
+  });
+
+  it("handles empty string", () => {
+    expect(formatFieldLabel("")).toBe("");
+  });
+});
+
