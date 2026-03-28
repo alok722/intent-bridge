@@ -1,63 +1,48 @@
-import Image from "next/image";
+import dynamic from "next/dynamic";
+import ScenarioSidebar from "@/components/scenario-sidebar";
+import InputPanel from "@/components/input-panel";
+import { ErrorBoundary } from "@/components/error-boundary";
+import EmptyState from "@/components/empty-state";
 
-export default function Home() {
+const PipelineVisualizer = dynamic(
+  () => import("@/components/pipeline-visualizer"),
+);
+
+const OutputCard = dynamic(() => import("@/components/output-card"));
+
+export default function DashboardPage() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
+    <div className="flex flex-col md:flex-row w-full min-h-screen bg-black overflow-hidden relative selection:bg-red-500/30">
+      <div className="absolute inset-0 pointer-events-none bg-[url('/grid.svg')] bg-center opacity-10 [mask-image:linear-gradient(180deg,white,rgba(255,255,255,0))]" />
+
+      <ScenarioSidebar />
+
+      <main className="flex-1 w-full bg-zinc-950/50 flex flex-col h-[100dvh] overflow-y-auto z-10 p-4 md:p-8">
+        <header className="mb-6 md:mb-10 px-1 flex flex-col gap-2">
+          <h1 className="text-3xl md:text-5xl font-bold font-heading tracking-tighter text-white">
+            Intelligence Console
           </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+          <p className="text-zinc-400 text-sm md:text-base font-medium max-w-2xl">
+            Connect disparate field data into actionable operations. Drop an
+            image, dictate a note, or paste raw telemetry below to begin
+            processing.
           </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        </header>
+
+        <div className="flex-1 flex flex-col gap-4 max-w-5xl w-full mx-auto pb-24">
+          <ErrorBoundary fallbackLabel="Input panel encountered an error.">
+            <InputPanel />
+          </ErrorBoundary>
+
+          <ErrorBoundary fallbackLabel="Pipeline visualization error.">
+            <PipelineVisualizer />
+          </ErrorBoundary>
+
+          <ErrorBoundary fallbackLabel="Output display error.">
+            <OutputCard />
+          </ErrorBoundary>
+
+          <EmptyState />
         </div>
       </main>
     </div>
